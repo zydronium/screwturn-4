@@ -15,13 +15,6 @@ namespace ScrewTurn.Wiki {
 	/// </summary>
 	public static class ReverseFormatter {
 
-
-		/// <summary>
-		/// Processes ordered or unordered lists and sublists.
-		/// </summary>
-		/// <param name="nodes">The nodes to process.</param>
-		/// <param name="marker">The marker to prepend list items with.</param>
-		/// <returns>Valid WikiMarkup text for the list structure.</returns>
 		private static string ProcessList(XmlNodeList nodes, string marker) {
 			string result = "";
 			string ul = "*";
@@ -30,32 +23,38 @@ namespace ScrewTurn.Wiki {
 				string text = "";
 				if(node.Name == "li") {
 					foreach(XmlNode child in node.ChildNodes) {
-						if(child.Name != "ol" && child.Name != "ul") {
-							StringReader a = new StringReader(child.OuterXml);
-							XmlDocument n = FromHtml((TextReader)a);
+						if(child.Name == "br") {
+							text += "\n";
+						}
+						else if(child.Name != "ol" && child.Name != "ul") {
+							TextReader reader = new StringReader(child.OuterXml);
+							XmlDocument n = FromHTML(reader);
 							text += ProcessChild(n.ChildNodes);
 						}
 					}
+					XmlAttribute styleAttribute = node.Attributes["style"];
+					if(styleAttribute != null) {
+						if(styleAttribute.Value.Contains("bold")) {
+							text = "'''" + text + "'''";
+						}
+						if(styleAttribute.Value.Contains("italic")) {
+							text = "''" + text + "''";
+						}
+						if(styleAttribute.Value.Contains("underline")) {
+							text = "__" + text + "__";
+						}
+					}
 					result += marker + " " + text;
-					if(!result.EndsWith("\r\n")) result += "\r\n";
+					if(!result.EndsWith("\n")) result += "\n";
 					foreach(XmlNode child in node.ChildNodes) {
-						if(child.Name.ToString() == "ol") {
-							result += ProcessList(child.ChildNodes, marker + ol);
-						}
-						if(child.Name.ToString() == "ul") {
-							result += ProcessList(child.ChildNodes, marker + ul);
-						}
+						if(child.Name == "ol") result += ProcessList(child.ChildNodes, marker + ol);
+						if(child.Name == "ul") result += ProcessList(child.ChildNodes, marker + ul);
 					}
 				}
 			}
 			return result;
 		}
 
-		/// <summary>
-		/// Extracts the URL of an image.
-		/// </summary>
-		/// <param name="node">The node containing image tag data.</param>
-		/// <returns>The image path in WikiMarkup.</returns>
 		private static string ProcessImage(XmlNode node) {
 			string result = "";
 			if(node.Attributes.Count != 0) {
@@ -70,11 +69,20 @@ namespace ScrewTurn.Wiki {
 			return result;
 		}
 
-		/// <summary>
-		/// Processes an image when found in a greater structure.
-		/// </summary>
-		/// <param name="nodes">Nodes of the structure.</param>
-		/// <returns>The correct WikiMarkup for the image.</returns>
+		private static string ProcessLink(string link) {
+			string subLink = "";
+			string[] links = link.Split('=');
+			if(links[0] == "GetFile.aspx?File") {
+				subLink += "{UP}";
+				for(int i = 1; i < links.Length - 1; i++) {
+					subLink += links[i] + "=";
+				}
+				subLink += links[links.Length - 1];
+				link = subLink;
+			}
+			return link;
+		}
+
 		private static string ProcessChildImage(XmlNodeList nodes) {
 			string image = "";
 			string p = "";
@@ -82,8 +90,7 @@ namespace ScrewTurn.Wiki {
 			string result = "";
 			bool hasDescription = false;
 			foreach(XmlNode node in nodes) {
-				if(node.Name.ToLowerInvariant() == "img")
-					image += ProcessImage(node);
+				if(node.Name.ToLowerInvariant() == "img") image += ProcessImage(node);
 				else if(node.Name.ToLowerInvariant() == "p") {
 					hasDescription = true;
 					p += "|" + ProcessChild(node.ChildNodes) + "|";
@@ -91,16 +98,14 @@ namespace ScrewTurn.Wiki {
 				else if(node.Name.ToLowerInvariant() == "a") {
 					string link = "";
 					string target = "";
-
 					if(node.Attributes.Count != 0) {
 						XmlAttributeCollection attribute = node.Attributes;
 						foreach(XmlAttribute attName in attribute) {
-							if(attName.Value.ToString() == "_blank")
-								target += "^";
-							if(attName.Name.ToString() == "href")
-								link += attName.Value.ToString();
+							if(attName.Value.ToString() == "_blank") target += "^";
+							if(attName.Name.ToString() == "href") link += attName.Value.ToString();
 						}
 					}
+					link = ProcessLink(link);
 					image += ProcessImage(node.LastChild);
 					url = "|" + target + link;
 				}
@@ -109,13 +114,7 @@ namespace ScrewTurn.Wiki {
 			result = p + image + url;
 			return result;
 		}
-
-
-		/// <summary>
-		/// Processes an image when found in a table (usually for 'imageauto' tags).
-		/// </summary>
-		/// <param name="nodes">The nodes.</param>
-		/// <returns>The WikiMarkup for an 'imageauto' tag.</returns>
+		
 		private static string ProcessTableImage(XmlNodeList nodes) {
 			string result = "";
 			foreach(XmlNode node in nodes) {
@@ -151,13 +150,11 @@ namespace ScrewTurn.Wiki {
 							XmlAttributeCollection attribute = node.Attributes;
 							foreach(XmlAttribute attName in attribute) {
 								if(attName.Name.ToString() != "id".ToLowerInvariant()) {
-									if(attName.Value.ToString() == "_blank")
-										target += "^";
-									if(attName.Name.ToString() == "href")
-										link += attName.Value.ToString();
-									if(attName.Name.ToString() == "title")
-										title += attName.Value.ToString();
+									if(attName.Value.ToString() == "_blank") target += "^";
+									if(attName.Name.ToString() == "href") link += attName.Value.ToString();
+									if(attName.Name.ToString() == "title") title += attName.Value.ToString();
 								}
+								link = ProcessLink(link);
 							}
 							result += ProcessTableImage(node.ChildNodes) + "|" + target + link;
 						}
@@ -167,62 +164,49 @@ namespace ScrewTurn.Wiki {
 			return result;
 		}
 
-		/// <summary>
-		/// Processes a table structure.
-		/// </summary>
-		/// <param name="nodes">The nodes.</param>
-		/// <returns>The WikiMarkup for the table.</returns>
 		private static string ProcessTable(XmlNodeList nodes) {
 			string result = "";
-
 			foreach(XmlNode node in nodes) {
 				switch(node.Name.ToLowerInvariant()) {
 					case "thead":
 						result += ProcessTable(node.ChildNodes);
 						break;
 					case "th":
-						result += "! " + ProcessChild(node.ChildNodes) + "\r\n";
+						result += "! " + ProcessChild(node.ChildNodes) + "\n";
 						break;
 					case "caption":
-						result += "|+ " + ProcessChild(node.ChildNodes) + "\r\n";
+						result += "|+ " + ProcessChild(node.ChildNodes) + "\n";
 						break;
 					case "tbody":
 						result += ProcessTable(node.ChildNodes) + "";
 						break;
 					case "tr":
 						string style = "";
-						foreach(XmlAttribute attr in node.Attributes)
+						foreach(XmlAttribute attr in node.Attributes) {
 							if(attr.Name.ToLowerInvariant() == "style") style += "style=\"" + attr.Value.ToString() + "\" ";
-
-						result += "|- " + style + "\r\n" + ProcessTable(node.ChildNodes);
-						//else result += processTable(node.ChildNodes);
+						}
+						result += "|- " + style + "\n" + ProcessTable(node.ChildNodes);
 						break;
 					case "td":
 						string styleTd = "";
 						if(node.Attributes.Count != 0) {
-							foreach(XmlAttribute attr in node.Attributes)
+							foreach(XmlAttribute attr in node.Attributes) {
 								styleTd += " " + attr.Name + "=\"" + attr.Value.ToString() + "\" ";
-							result += "| " + styleTd + " | " + ProcessChild(node.ChildNodes) + "\r\n";
+							}
+							result += "| " + styleTd + " | " + ProcessChild(node.ChildNodes) + "\n";
 						}
-						else result += "| " + ProcessChild(node.ChildNodes) + "\r\n";
+						else result += "| " + ProcessChild(node.ChildNodes) + "\n";
 						break;
 				}
-
 			}
 			return result;
 		}
-		/// <summary>
-		/// Recursively processes XML nodes.
-		/// </summary>
-		/// <param name="nodes">The XML nodes.</param>
-		/// <returns>The correspondent WikiMarkup.</returns>
+
 		private static string ProcessChild(XmlNodeList nodes) {
 			string result = "";
 			foreach(XmlNode node in nodes) {
 				bool anchor = false;
-				if(node.NodeType == XmlNodeType.Text) {
-					result += node.Value;
-				}
+				if(node.NodeType == XmlNodeType.Text) result += node.Value.TrimStart('\n');
 				else if(node.NodeType != XmlNodeType.Whitespace) {
 					switch(node.Name.ToLowerInvariant()) {
 						case "html":
@@ -230,87 +214,95 @@ namespace ScrewTurn.Wiki {
 							break;
 						case "b":
 						case "strong":
-							result += "'''" + ProcessChild(node.ChildNodes) + "'''";
+							result += node.HasChildNodes ? "'''" + ProcessChild(node.ChildNodes) + "'''" : "";
 							break;
 						case "strike":
 						case "s":
-							result += "--" + ProcessChild(node.ChildNodes) + "--";
+							result += node.HasChildNodes ? "--" + ProcessChild(node.ChildNodes) + "--" : "";
 							break;
 						case "em":
 						case "i":
-							result += "''" + ProcessChild(node.ChildNodes) + "''";
+							result += node.HasChildNodes ? "''" + ProcessChild(node.ChildNodes) + "''" : "";
 							break;
 						case "u":
-							result += "__" + ProcessChild(node.ChildNodes) + "__";
+							result += node.HasChildNodes ? "__" + ProcessChild(node.ChildNodes) + "__" : "";
 							break;
 						case "h1":
 							if(node.HasChildNodes) {
-								if(node.FirstChild.NodeType == XmlNodeType.Whitespace) result += "----\r\n" + ProcessChild(node.ChildNodes);
-								else result += "==" + ProcessChild(node.ChildNodes) + "==\r\n";
+								if(node.FirstChild.NodeType == XmlNodeType.Whitespace) result += "----\n" + ProcessChild(node.ChildNodes);
+								else result += "==" + ProcessChild(node.ChildNodes) + "==\n";
 							}
-							else result += "----\r\n";
+							else result += "----\n";
 							break;
 						case "h2":
-							result += "===" + ProcessChild(node.ChildNodes) + "===\r\n";
+							result += "===" + ProcessChild(node.ChildNodes) + "===\n";
 							break;
 						case "h3":
-							result += "====" + ProcessChild(node.ChildNodes) + "====\r\n";
+							result += "====" + ProcessChild(node.ChildNodes) + "====\n";
 							break;
 						case "h4":
-							result += "=====" + ProcessChild(node.ChildNodes) + "=====\r\n";
+							result += "=====" + ProcessChild(node.ChildNodes) + "=====\n";
 							break;
 						case "pre":
-							result += "@@" + node.InnerText.ToString() + "@@";
+							result += node.HasChildNodes ? "@@" + node.InnerText.ToString() + "@@" : "";
 							break;
 						case "code":
-							result += "{{" + ProcessChild(node.ChildNodes) + "}}";
+							result += node.HasChildNodes ? "{{" + ProcessChild(node.ChildNodes) + "}}" : "";
 							break;
 						case "hr":
 						case "hr /":
-							result += "\r\n== ==\r\n" + ProcessChild(node.ChildNodes);
+							result += "\n== ==\n" + ProcessChild(node.ChildNodes);
 							break;
 						case "span":
-							if(node.Attributes.Count != 0) {
-								XmlAttributeCollection attribute = node.Attributes;
-								foreach(XmlAttribute attName in attribute) {
-									if(attName.Value.ToString() == "italic") {
-										result += "''" + ProcessChild(node.ChildNodes) + "''";
-									}
+							if(node.Attributes["style"] != null) {
+								if(node.Attributes["style"].Value.Replace(" ", "").Contains("font-weight:normal")) {
+									result += ProcessChild(node.ChildNodes);
+								}
+							}
+							if(node.Attributes.Count > 0) {
+								XmlAttributeCollection attributeCollection = node.Attributes;
+								foreach(XmlAttribute attribute in attributeCollection) {
+									if(attribute.Value == "italic") result += "''" + ProcessChild(node.ChildNodes) + "''";
 								}
 							}
 							break;
 						case "br":
-							result += "\r\n" + ProcessChild(node.ChildNodes);
+							if(node.PreviousSibling != null && node.PreviousSibling.Name == "br") {
+								result += "\n";
+							}
+							else {
+								result += Settings.ProcessSingleLineBreaks ? "\n" : "\n\n";
+							}
 							break;
 						case "table":
-							bool isImage = false;
-							string image = "";
 							string tableStyle = "";
 
-							foreach(XmlAttribute attName in node.Attributes) {
-								if(attName.Value.ToString() == "imageauto") {
-									isImage = true;
-									image += "[imageauto|" + ProcessTableImage(node.ChildNodes) + "]\r\n";
+							if(node.Attributes["class"] != null && node.Attributes["class"].Value.Contains("imageauto")) {
+								result += "[imageauto|" + ProcessTableImage(node.ChildNodes) + "]";
+							}
+							else {
+								foreach(XmlAttribute attName in node.Attributes) {
+									tableStyle += attName.Name + "=\"" + attName.Value + "\" ";
 								}
-								else tableStyle += attName.Name + "=\"" + attName.Value.ToString() + "\" ";
+								result += "{| " + tableStyle + "\n" + ProcessTable(node.ChildNodes) + "|}\n";
 							}
-							if(isImage) {
-								result += image;
-								isImage = false;
-								break;
-							}
-							else result += "{| " + tableStyle + "\r\n" + ProcessTable(node.ChildNodes) + "|}\r\n";
 							break;
 						case "ol":
+							if(node.PreviousSibling != null && node.PreviousSibling.Name != "br") {
+								result += "\n";
+							}
 							if(node.ParentNode != null) {
-								if(node.ParentNode.Name.ToLowerInvariant() != "td") result += ProcessList(node.ChildNodes, "#");
+								if(node.ParentNode.Name != "td") result += ProcessList(node.ChildNodes, "#");
 								else result += node.OuterXml.ToString();
 							}
 							else result += ProcessList(node.ChildNodes, "#");
 							break;
 						case "ul":
+							if(node.PreviousSibling != null && node.PreviousSibling.Name != "br") {
+								result += "\n";
+							}
 							if(node.ParentNode != null) {
-								if(node.ParentNode.Name.ToLowerInvariant() != "td") result += ProcessList(node.ChildNodes, "*");
+								if(node.ParentNode.Name != "td") result += ProcessList(node.ChildNodes, "*");
 								else result += node.OuterXml.ToString();
 							}
 							else result += ProcessList(node.ChildNodes, "*");
@@ -322,51 +314,43 @@ namespace ScrewTurn.Wiki {
 							result += "<sub>" + ProcessChild(node.ChildNodes) + "</sub>";
 							break;
 						case "p":
-							if(node.Attributes.Count != 0) {
-								XmlAttributeCollection attribute = node.Attributes;
-								foreach(XmlAttribute attName in attribute) {
-									if(attName.Value.ToString() == "imagedescription") result += "";
-								}
-							}
-							else result += ProcessChild(node.ChildNodes) + "{BR}\r\n";
+							if(node.Attributes["class"] != null && node.Attributes["class"].Value.Contains("imagedescription")) continue;
+							else result += ProcessChild(node.ChildNodes) + "\n" + (Settings.ProcessSingleLineBreaks ? "" : "\n");
 							break;
 						case "div":
-							if(node.Attributes.Count != 0) {
-								XmlAttributeCollection attribute = node.Attributes;
-								foreach(XmlAttribute attName in attribute) {
-									if(attName.Value.ToString() == "box") {
-										result += "(((" + ProcessChild(node.ChildNodes) + ")))\r\n";
-									}
-									if(attName.Value.ToString() == "imageleft") {
-										result += "[imageleft" + ProcessChildImage(node.ChildNodes) + "]\r\n";
-									}
-									if(attName.Value.ToString() == "imageright") {
-										result += "[imageright" + ProcessChildImage(node.ChildNodes) + "]\r\n";
-									}
-									if(attName.Value.ToString() == "image") {
-										result += "[image" + ProcessChildImage(node.ChildNodes) + "]\r\n";
-									}
-									if(attName.Value.ToString() == "indent") {
-										result += ": " + ProcessChild(node.ChildNodes) + "\r\n";
-									}
+							if(node.Attributes["class"] != null) {
+								if(node.Attributes["class"].Value.Contains("box")) result += node.HasChildNodes ? "(((" + ProcessChild(node.ChildNodes) + ")))" : "";
+								else if(node.Attributes["class"].Value.Contains("imageleft")) result += "[imageleft" + ProcessChildImage(node.ChildNodes) + "]";
+								else if(node.Attributes["class"].Value.Contains("imageright")) result += "[imageright" + ProcessChildImage(node.ChildNodes) + "]";
+								else if(node.Attributes["class"].Value.Contains("image")) result += "[image" + ProcessChildImage(node.ChildNodes) + "]";
+								else if(node.Attributes["class"].Value.Contains("indent")) result += ": " + ProcessChild(node.ChildNodes) + "\n";
+							}
+							else {
+								result += "\n";
+								if(node.PreviousSibling != null && node.PreviousSibling.Name != "div") {
+									result += Settings.ProcessSingleLineBreaks ? "" : "\n";
+								}
+								if(node.FirstChild != null && node.FirstChild.Name == "br") {
+									node.RemoveChild(node.FirstChild);
+								}
+								if(node.HasChildNodes) {
+									result += ProcessChild(node.ChildNodes);
+									result += Settings.ProcessSingleLineBreaks ? "\n" : "\n\n";
 								}
 							}
-							else result += ProcessChild(node.ChildNodes) + "\r\n";
 							break;
 						case "img":
 							string description = "";
 							bool hasClass = false;
 							bool isLink = false;
-							if(node.ParentNode != null) {
-								if(node.ParentNode.Name.ToLowerInvariant().ToString() == "a") isLink = true;
-							}
+							if(node.ParentNode != null && node.ParentNode.Name.ToLowerInvariant().ToString() == "a") isLink = true;
 							if(node.Attributes.Count != 0) {
 								foreach(XmlAttribute attName in node.Attributes) {
 									if(attName.Name.ToString() == "alt") description = attName.Value.ToString();
 									if(attName.Name.ToString() == "class") hasClass = true;
 								}
 							}
-							if(!hasClass && !isLink) result += "[image|" + description + "|" + ProcessImage(node) + "]\r\n";
+							if(!hasClass && !isLink) result += "[image|" + description + "|" + ProcessImage(node) + "]\n";
 							else if(!hasClass && isLink) result += "[image|" + description + "|" + ProcessImage(node);
 							else result += description + "|" + ProcessImage(node);
 							break;
@@ -377,22 +361,22 @@ namespace ScrewTurn.Wiki {
 							string title = "";
 							bool isInternalLink = false;
 							bool childImg = false;
-							if(node.FirstChild != null) {
-								if(node.FirstChild.Name.ToLowerInvariant() == "img") childImg = true;
-							}
-							if(node.ParentNode.Name.ToLowerInvariant() == "td") isTable = true;
+							bool isUnknowLink = false;
+							if(node.FirstChild != null && node.FirstChild.Name == "img") childImg = true;
+							if(node.ParentNode.Name == "td") isTable = true;
 							if(node.Attributes.Count != 0) {
 								XmlAttributeCollection attribute = node.Attributes;
 								foreach(XmlAttribute attName in attribute) {
-									if(attName.Name.ToString() != "id".ToLowerInvariant()) {
-										if(attName.Value.ToString() == "_blank") target += "^";
-										if(attName.Name.ToString() == "href") link += attName.Value.ToString();
-										if(attName.Name.ToString() == "title") title += attName.Value.ToString();
-										if(attName.Value.ToString() == "systemlink") isInternalLink = true;
+									if(attName.Name != "id".ToLowerInvariant()) {
+										if(attName.Value == "_blank") target += "^";
+										if(attName.Name == "href") link += attName.Value.ToString();
+										if(attName.Name == "title") title += attName.Value.ToString();
+										if(attName.Value == "SystemLink".ToLowerInvariant()) isInternalLink = true;
+										if(attName.Value == "unknownlink") isUnknowLink = true;
 									}
 									else {
 										anchor = true;
-										result += "[anchor|#" + attName.Value.ToString().ToLowerInvariant() + "]" + ProcessChild(node.ChildNodes);
+										result += "[anchor|#" + attName.Value + "]" + ProcessChild(node.ChildNodes);
 										break;
 									}
 								}
@@ -400,13 +384,12 @@ namespace ScrewTurn.Wiki {
 									string[] splittedLink = link.Split('=');
 									link = "c:" + splittedLink[1];
 								}
-
-								if(!anchor && !isTable && !childImg) {
+								else link = ProcessLink(link);
+								if(!anchor && !isTable && !childImg && !isUnknowLink)
 									if(title != link) result += "[" + target + link + "|" + ProcessChild(node.ChildNodes) + "]";
 									else result += "[" + target + link + "|" + ProcessChild(node.ChildNodes) + "]";
-								}
 								if(!anchor && !childImg && isTable) result += "[" + target + link + "|" + ProcessChild(node.ChildNodes) + "]";
-								if(!anchor && childImg && !isTable) result += ProcessChild(node.ChildNodes) + "|" + target + link + "]\r\n";
+								if(!anchor && childImg && !isTable) result += ProcessChild(node.ChildNodes) + "|" + target + link + "]";
 							}
 							break;
 						default:
@@ -419,19 +402,16 @@ namespace ScrewTurn.Wiki {
 			return result;
 		}
 
-		/// <summary>
-		/// Generates a valid XML document from a piece of a arbitrary HTML.
-		/// </summary>
-		/// <param name="reader">The reader.</param>
-		/// <returns>The valid XML document.</returns>
-		private static XmlDocument FromHtml(TextReader reader) {
+		private static XmlDocument FromHTML(TextReader reader) {
+			// setup SgmlReader
 			Sgml.SgmlReader sgmlReader = new Sgml.SgmlReader();
 			sgmlReader.DocType = "HTML";
-			sgmlReader.WhitespaceHandling = WhitespaceHandling.All;
+			sgmlReader.WhitespaceHandling = WhitespaceHandling.None;
 
 			sgmlReader.CaseFolding = Sgml.CaseFolding.ToLower;
 			sgmlReader.InputStream = reader;
 
+			// create document
 			XmlDocument doc = new XmlDocument();
 			doc.PreserveWhitespace = true;
 			doc.XmlResolver = null;
@@ -440,16 +420,15 @@ namespace ScrewTurn.Wiki {
 		}
 
 		/// <summary>
-		/// Reverse-formats HTML content into WikiMarkup.
+		/// Reverse formats HTML content into WikiMarkup.
 		/// </summary>
 		/// <param name="html">The input HTML.</param>
 		/// <returns>The corresponding WikiMarkup.</returns>
 		public static string ReverseFormat(string html) {
 			StringReader strReader = new StringReader(html);
-			XmlDocument x = FromHtml((TextReader)strReader);
-			return ProcessChild(x.FirstChild.ChildNodes);
+			XmlDocument x = FromHTML((TextReader)strReader);
+			if(x != null && x.HasChildNodes && x.FirstChild.HasChildNodes) return ProcessChild(x.FirstChild.ChildNodes);
+			else return "";
 		}
-
 	}
-
 }
