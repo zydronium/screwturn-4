@@ -8,6 +8,9 @@ using Microsoft.WindowsAzure.StorageClient;
 
 namespace ScrewTurn.Wiki.Plugins.AzureStorage {
 
+	/// <summary>
+	/// Implements a Users Storage Provider using Azure Table Storage.
+	/// </summary>
 	public class AzureUsersStorageProvider : IUsersStorageProviderV40 {
 
 		private IHostV40 _host;
@@ -755,7 +758,7 @@ namespace ScrewTurn.Wiki.Plugins.AzureStorage {
 		/// Gets the Information about the Provider.
 		/// </summary>
 		public ComponentInformation Information {
-			get { return new ComponentInformation("Azure Table Storage Users Storage Provider", "Threeplicate Srl", _host.GetGlobalSettingValue(GlobalSettingName.WikiVersion), "", ""); }
+			get { return new ComponentInformation("Azure Table Storage Users Storage Provider", "Threeplicate Srl", "4.0.1.71", "http://www.screwturn.eu", null); }
 		}
 
 		/// <summary>
